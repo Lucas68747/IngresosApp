@@ -72,6 +72,8 @@ Desarrollada en **Python**, con interfaz gráfica **Tkinter**, base de datos **S
 
 ![Ejemplo de modificación de un registro](./screenshots/app-funcionando-2.png)
 
+---
+
 ![Ejemplo de reporte en PDF generado](./screenshots/ingresos-pdf.png)
 
 ---
@@ -149,5 +151,7 @@ Developed in **Python**, with **Tkinter** graphical interface, **SQLite3** datab
    - Export to PDF whenever you need it.
 
 ![Example of modifying a record](./screenshots/app-funcionando-2.png)
+
+---
 
 ![Example of generated PDF record](./screenshots/ingresos-pdf.png)
