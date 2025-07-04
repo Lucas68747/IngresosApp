@@ -1,4 +1,4 @@
-# 🚗 🖊️​ IngresosApp
+# 🚗​ IngresosApp
 
 Aplicación de escritorio para registrar y controlar ingresos a un predio o establecimiento privado (Barrio cerrado, Parque Industrial, etc).  
 Desarrollada en **Python**, con interfaz gráfica **Tkinter**, base de datos **SQLite3** y exportación de reportes en PDF.
@@ -79,7 +79,7 @@ Desarrollada en **Python**, con interfaz gráfica **Tkinter**, base de datos **S
 ---
 English version
 ---
-# 🚗 🖊️​ IngresosApp
+# 🚗 IngresosApp
 
 Desktop application to register and control entries to a property or private facility (Gated community, Industrial park, etc).  
 Developed in **Python**, with **Tkinter** graphical interface, **SQLite3** database, and PDF report export.
