@@ -5,13 +5,15 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 import traceback
+import webbrowser
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 
-from .. import __version__, rutas
+from .. import __version__, correo, reportes, rutas
 from ..db import BaseDeDatos, Contacto, ErrorDeDatos, Registro
 from ..patentes import formatear_dominio
 from . import estilo, formato, perfiles
@@ -20,6 +22,8 @@ from .dialogos import (
     CampoAutocompletar,
     DialogoAnular,
     DialogoContacto,
+    DialogoCorreo,
+    DialogoFechas,
     DialogoHistorial,
     DialogoModificar,
     DialogoPuesto,
@@ -669,15 +673,124 @@ class VentanaPrincipal:
             self._cargar_agenda()
             self._actualizar_ficha()
 
-    # Reportes y correo: se completan en la etapa 3.
+    # Reportes y correo
+    def _periodo_elegido(self) -> reportes.Periodo | None:
+        nombre = self.var_periodo.get()
+        if nombre == "Elegir fechas…":
+            return DialogoFechas(self.root).mostrar()
+        return reportes.periodo_por_nombre(nombre)
+
+    def _generar_pdf(self, periodo: reportes.Periodo, destino: Path) -> Path:
+        turno = self.base.turno_actual()
+        return reportes.generar_pdf(
+            self.base.entre_fechas(periodo.desde, periodo.hasta), periodo, destino,
+            puesto=self.base.ajuste("puesto", "") or "",
+            generado_por=turno.guardia if turno else "",
+        )
+
+    def _carpeta_reportes(self) -> Path:
+        carpeta = self.carpeta / "reportes"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        return carpeta
+
     def exportar_pdf(self) -> None:
-        messagebox.showinfo("Reportes", "La exportación a PDF se completa en la próxima etapa.", parent=self.root)
+        periodo = self._periodo_elegido()
+        if periodo is None:
+            return
+        archivo = filedialog.asksaveasfilename(
+            parent=self.root, title="Guardar reporte en PDF", defaultextension=".pdf",
+            initialdir=str(self._carpeta_reportes()), initialfile=periodo.nombre_archivo(),
+            filetypes=[("PDF", "*.pdf")],
+        )
+        if not archivo:
+            return
+        try:
+            ruta = self._generar_pdf(periodo, Path(archivo))
+        except OSError as e:
+            messagebox.showwarning("Exportar PDF", f"No se pudo guardar el PDF:\n{e}\n\n"
+                                   "Si el archivo está abierto en otro programa, cerralo y probá de nuevo.",
+                                   parent=self.root)
+            return
+        self.mensaje(f"Reporte guardado: {ruta.name}")
+        abrir_en_sistema(ruta)
 
     def enviar_correo(self) -> None:
-        messagebox.showinfo("Correo", "El envío por correo se completa en la próxima etapa.", parent=self.root)
+        config = correo.leer_config(self.base)
+        clave = correo.contrasena_guardada(config.remitente) if config.completa else None
+        if not (config.completa and clave):
+            if messagebox.askyesno(
+                "Enviar por correo",
+                "El envío por correo todavía no está configurado.\n\n¿Configurarlo ahora?\n"
+                "(Si elegís «No», se genera el PDF y se abre tu programa de correo para adjuntarlo a mano.)",
+                parent=self.root,
+            ):
+                self.configurar_correo()
+                return
+            self._enviar_a_mano()
+            return
+        periodo = self._periodo_elegido()
+        if periodo is None:
+            return
+        if not messagebox.askyesno(
+            "Enviar por correo",
+            f"¿Enviar el reporte {periodo.texto()} a {config.destinatarios}?", parent=self.root,
+        ):
+            return
+        ruta = self._generar_pdf(periodo, self._carpeta_reportes() / periodo.nombre_archivo())
+        asunto, cuerpo = self._textos_correo(periodo)
+        self.mensaje("Enviando el reporte por correo…")
+        resultado: list[str] = []
+
+        def tarea():
+            try:
+                correo.enviar(config, clave, asunto, cuerpo, ruta)
+                resultado.append("ok")
+            except correo.ErrorDeCorreo as e:
+                resultado.append(str(e))
+
+        hilo = threading.Thread(target=tarea, daemon=True)
+        hilo.start()
+
+        def esperar():
+            if hilo.is_alive():
+                self.root.after(200, esperar)
+            elif resultado and resultado[0] == "ok":
+                self.mensaje(f"Reporte {periodo.texto()} enviado a {config.destinatarios}.")
+            else:
+                self.mensaje("No se pudo enviar el reporte.")
+                messagebox.showwarning("Enviar por correo", resultado[0] if resultado else "No se pudo enviar.",
+                                       parent=self.root)
+
+        esperar()
+
+    def _textos_correo(self, periodo: reportes.Periodo) -> tuple[str, str]:
+        puesto = self.base.ajuste("puesto", "") or "Puesto de control"
+        registros = [r for r in self.base.entre_fechas(periodo.desde, periodo.hasta) if not r.anulado]
+        asunto = f"IngresosApp · {puesto} · Reporte {periodo.texto()}"
+        cuerpo = (f"Reporte de ingresos y salidas {periodo.texto()}.\n"
+                  f"{puesto}\n\n{len(registros)} registros. El detalle está en el PDF adjunto.\n\n"
+                  f"Enviado con IngresosApp {__version__}.")
+        return asunto, cuerpo
+
+    def _enviar_a_mano(self) -> None:
+        periodo = self._periodo_elegido()
+        if periodo is None:
+            return
+        ruta = self._generar_pdf(periodo, self._carpeta_reportes() / periodo.nombre_archivo())
+        asunto, cuerpo = self._textos_correo(periodo)
+        destinatarios = self.base.ajuste("correo_destinatarios", "") or ""
+        webbrowser.open(correo.enlace_mailto(destinatarios, asunto, cuerpo))
+        abrir_en_sistema(ruta.parent)
+        messagebox.showinfo(
+            "Enviar por correo",
+            f"Se generó el reporte {ruta.name} y se abrió la carpeta donde está.\n"
+            "Adjuntalo al correo que se abrió en tu programa de correo.",
+            parent=self.root,
+        )
 
     def configurar_correo(self) -> None:
-        self.enviar_correo()
+        if DialogoCorreo(self.root, self.base).mostrar():
+            self.mensaje("Configuración de correo guardada.")
 
     def abrir_carpeta_datos(self) -> None:
         abrir_en_sistema(self.carpeta)
@@ -967,10 +1080,13 @@ class VentanaPrincipal:
                  "Los contactos se pueden editar y eliminar en cualquier momento.\n\n"
                  "Son datos personales: cargá solo lo necesario para el trabajo de la guardia y borrá lo que "
                  "ya no sirva. En Argentina, su tratamiento está alcanzado por la Ley 25.326 de Protección de "
-                 "Datos Personales. La agenda queda solo en este equipo y nunca sale en los reportes ni en los correos.",
+                 "Datos Personales. La agenda queda solo en este equipo y nunca sale en los reportes ni en los correos. "
+                 "Tené en cuenta que las copias de seguridad diarias guardan la base completa: un contacto eliminado "
+                 "sigue en esas copias hasta que se borran solas, a los 30 días.",
                  antes=ir_a(PESTANA_AGENDA)),
             Paso(lambda: self.barra_reportes, "Reportes",
-                 "Elegí el período y exportalo a PDF para imprimir, o envialo por correo al encargado. "
+                 "Elegí el período y exportalo a PDF para imprimir, o envialo por correo al encargado "
+                 "(la cuenta se configura una vez en Configuración → Envío por correo). "
                  "Este recorrido se puede repetir con F1 o desde Ayuda.", antes=ir_a(0)),
         ]
 

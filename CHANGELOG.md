@@ -3,7 +3,7 @@
 Todas las versiones de IngresosApp. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/)
 y la numeración, [Versionado Semántico](https://semver.org/lang/es/): `MAYOR.MENOR.PARCHE`.
 
-## [Sin publicar] · 2.0.0
+## [2.0.0] · 2026-10-25
 
 ### Agregado
 - Registro de salidas y lista de quienes siguen dentro del predio.
@@ -18,6 +18,11 @@ y la numeración, [Versionado Semántico](https://semver.org/lang/es/): `MAYOR.M
 - Campo opcional «Autorizó», para anotar quién dio el permiso de ingreso.
 - Tipo de lugar (barrio cerrado, parque industrial, empresa u otro) para adaptar los ejemplos y las ayudas.
 - Recorrido de la primera vez que explica cada parte de la ventana.
+- Reportes en PDF con tabla, por día o por período, con la firma del encargado. Los anulados se ven tachados.
+- Envío de reportes por correo desde una cuenta que configura el encargado; la contraseña se guarda en el
+  almacén seguro del sistema.
+- Ventana redimensionable, ícono nuevo y diseño renovado.
+- Ejecutables compilados automáticamente en GitHub Actions, con huellas SHA-256 y constancia de compilación.
 - Importación automática de los datos de la versión 1.0, sin modificar el archivo original.
 
 ### Cambiado
@@ -37,4 +42,5 @@ y la numeración, [Versionado Semántico](https://semver.org/lang/es/): `MAYOR.M
 Primera versión: carga, modificación y eliminación de ingresos con fecha y hora automáticas,
 listado y exportación a PDF. Ejecutables para Windows y Linux.
 
+[2.0.0]: https://github.com/Lucas68747/IngresosApp/releases/tag/v2.0.0
 [1.0]: https://github.com/Lucas68747/IngresosApp/releases/tag/v1.0

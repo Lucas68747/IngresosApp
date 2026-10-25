@@ -1,157 +1,106 @@
-# 🚗​ IngresosApp
+<p align="center"><img src="docs/icono.png" width="96" alt="Ícono de IngresosApp"></p>
 
-Aplicación de escritorio para registrar y controlar ingresos a un predio o establecimiento privado (Barrio cerrado, Parque Industrial, etc).  
-Desarrollada en **Python**, con interfaz gráfica **Tkinter**, base de datos **SQLite3** y exportación de reportes en PDF.
+<h1 align="center">IngresosApp</h1>
 
----
+<p align="center">
+Registro de ingresos y salidas para la guardia de barrios cerrados, parques industriales y otros predios privados.<br>
+<a href="https://www.ingresosapp.com.ar/">www.ingresosapp.com.ar</a> · <a href="https://github.com/Lucas68747/IngresosApp/releases/latest">Descargar</a> · <a href="CHANGELOG.md">Historial de cambios</a>
+</p>
 
-## Vista previa
+![Ventana principal de IngresosApp 2.0](docs/capturas/ventana-principal.png)
 
-![Vista general de IngresosApp](./screenshots/app-funcionando.png)
+## Por qué existe
 
----
+IngresosApp nació en la garita de un parque industrial. Los ingresos se anotaban a mano en planillas fotocopiadas, y cada mes se juntaban unas 30 hojas que el encargado pasaba a retirar. La app reemplaza esas planillas: cada ingreso se carga en segundos, la fecha y la hora las pone el sistema (nadie las escribe a mano) y al final del día todo queda en un PDF.
 
-## Funcionalidades principales
+Es un proyecto personal, hecho por una sola persona, pensado para usarse en cualquier lugar que necesite registrar quién entra y quién sale, con guardias rotativas las 24 horas.
 
-- **CRUD completo:** Crear, modificar, leer y eliminar registros de ingresos.
-- **Registro automático de fecha y hora:** Para asegurar veracidad de la información.
-- **Visualización de registros:** Tabla interactiva con todos los datos.
-- **Exportar a PDF:** Genera reportes con todos los ingresos registrados.
-- **Interfaz intuitiva:** Sencilla y clara para cualquier usuario.
+## Qué hace
 
----
+- **Ingresos y salidas** de vehículos y personas a pie, con fecha, hora y guardia de turno automáticas.
+- **Adentro ahora:** quiénes entraron y todavía no salieron, y hace cuánto.
+- **Guardia de turno:** cada ingreso, salida y cambio queda firmado con la guardia que lo hizo.
+- **Nada se borra:** los errores se corrigen o se anulan con un motivo, y cada registro guarda su historial completo.
+- **Agenda de la guardia:** lotes, casas, empresas o sectores con sus teléfonos. Al escribir el destino, aparece la ficha lista para llamar.
+- **Campo «Autorizó»,** para anotar quién dio el permiso de ingreso.
+- **Reportes en PDF** por día o por período, con tabla y lugar para la firma del encargado, y **envío por correo**.
+- **Búsqueda** por dominio, empresa, persona o fecha, y autocompletado de lo que ya se cargó.
+- **Copia de seguridad automática** todos los días.
+- **Recorrido de la primera vez** que explica cada parte de la ventana (se repite con F1).
+- **Se adapta al lugar:** barrio cerrado, parque industrial, empresa u otro; cambian los ejemplos y las ayudas, no la forma de trabajar.
 
-## Tecnologías y librerías utilizadas
+| Agenda | Reporte en PDF |
+|---|---|
+| ![Pestaña Agenda](docs/capturas/agenda.png) | ![Reporte en PDF](docs/capturas/reporte-pdf.png) |
 
-- **Python 3:** Lenguaje principal.
-- **Tkinter:** Para crear la ventana y los formularios.
-- **SQLite3:** Base de datos embebida.
-- **FPDF:** Para la generación de archivos PDF.
-- **datetime:** Para capturar fecha y hora automáticamente.
+## Descargar
 
----
+Desde la [última versión](https://github.com/Lucas68747/IngresosApp/releases/latest):
 
-## Estructura y variables clave
+- **Windows:** `IngresosApp.exe`. No requiere instalación: se descarga y se abre.
+  Como el ejecutable todavía no está firmado digitalmente, Windows puede mostrar un aviso de SmartScreen la primera vez: tocá **Más información** y después **Ejecutar de todas formas**.
+- **Linux:** `IngresosApp`. Antes de abrirlo hay que darle permiso de ejecución: `chmod +x IngresosApp`.
 
-- **Variables:**  
-  - `miDomain`, `miBusiness`, `miParticular`, `miDestination` → campos de información.  
-  - `miDate`, `miHour` → se generan automáticamente al guardar o modificar.
-- **Tabla de base de datos:**  
-  - `empleado (ID, DATE, HOUR, DOMAIN, BUSINESS, PARTICULAR, DESTINATION)`
-- **Ventana principal:**  
-  - Entradas para dominio, empresa, particular y destino.
-  - Botones para operaciones CRUD y exportar a PDF.
-  - Tabla (`Treeview`) para mostrar los registros.
-- **Funciones destacadas:**  
-  - `crear()`: Inserta registro nuevo.
-  - `actualizar()`: Modifica registro seleccionado.
-  - `borrar()`: Elimina registro seleccionado.
-  - `mostrar()`: Actualiza la tabla.
-  - `exportar()`: Genera el PDF.
+Cada versión incluye `SHA256SUMS.txt` con la huella de cada archivo, y una constancia pública de que se compiló automáticamente en GitHub Actions a partir de este código. Para verificarla: `gh attestation verify IngresosApp.exe --repo Lucas68747/IngresosApp`.
 
----
+Todas las versiones anteriores, incluida la 1.0, siguen disponibles en [Releases](https://github.com/Lucas68747/IngresosApp/releases).
 
-## ¿Cómo usarla?
+## Dónde quedan los datos
 
-1. **Requisitos**
-   - Python 3
-   - Instalar dependencias:
-   ```bash
-     pip install fpdf
-   ```
+Todo se guarda **solo en el equipo de la garita**, en `Documentos\IngresosApp`:
 
-1. **Ejecutar**
-   ```bash
-   python app.py
-   ```
-2.  **Interfaz**
+- `ingresos.db`: la base de datos (SQLite).
+- `respaldos/`: una copia por día; se conservan las últimas 30.
+- `reportes/`: los PDF generados.
 
-   - Completa los campos y usa los botones para gestionar los registros.
-   - La fecha y la hora se registran automáticamente.
-   - Exporta a PDF cuando lo necesites.
+La app no necesita internet ni cuentas, salvo para enviar reportes por correo. Si se usó la versión 1.0, sus datos se importan automáticamente la primera vez y el archivo original no se modifica.
 
-![Ejemplo de modificación de un registro](./screenshots/app-funcionando-2.png)
+## Para desarrollar
 
----
+Requiere Python 3.10 o más nuevo.
 
-![Ejemplo de reporte en PDF generado](./screenshots/ingresos-pdf.png)
+```bash
+python -m pip install -r requirements-dev.txt
+python IngresosApp.py            # abre la app
+python -m pytest                 # corre los tests (en Linux sin escritorio: xvfb-run python -m pytest)
+python -m pip install pyinstaller
+python scripts/compilar.py       # genera el ejecutable en dist/
+```
 
----
-English version
----
-# 🚗 IngresosApp
+Para probar sin tocar los datos reales, se puede usar otra carpeta: `INGRESOSAPP_DATOS=/tmp/prueba python IngresosApp.py`.
 
-Desktop application to register and control entries to a property or private facility (Gated community, Industrial park, etc).  
-Developed in **Python**, with **Tkinter** graphical interface, **SQLite3** database, and PDF report export.
+### Cómo está hecho
 
----
+Python con **Tkinter** para la interfaz, **SQLite** para los datos, **fpdf2** para los PDF y **keyring** para guardar la contraseña del correo de forma segura. Nada más: la idea es que el código siga siendo simple de leer y de mantener.
 
-## Preview
+```
+IngresosApp.py          punto de entrada
+ingresosapp/
+  db.py                 base de datos: reglas, historial, agenda, migraciones y copias de seguridad
+  reportes.py           reportes en PDF
+  correo.py             envío de reportes por correo
+  patentes.py           normalización de dominios
+  rutas.py              dónde se guardan los datos
+  ui/                   ventana, diálogos, recorrido y estilos
+  recursos/             ícono y fuentes
+tests/                  tests de datos, reportes, correo e interfaz
+scripts/                compilación y notas de versión
+.github/workflows/      pruebas en cada cambio y publicación de versiones
+```
 
-![General view of IngresosApp](./screenshots/app-funcionando.png)
+### Publicar una versión
 
----
+1. Actualizar `__version__` en `ingresosapp/__init__.py` y el `CHANGELOG.md`.
+2. Crear y subir la etiqueta: `git tag v2.0.1 && git push origin v2.0.1`.
+3. GitHub Actions corre los tests, compila Windows y Linux y deja la release como borrador.
+4. Revisar el borrador en GitHub y publicarlo.
 
-## Main features
+Las versiones siguen [Versionado Semántico](https://semver.org/lang/es/): `MAYOR.MENOR.PARCHE`.
 
-- **Full CRUD:** Create, update, read, and delete entry records.
-- **Automatic date and time recording:** To ensure information accuracy.
-- **Record visualization:** Interactive table with all data.
-- **Export to PDF:** Generates reports with all registered entries.
-- **Intuitive interface:** Simple and clear for any user.
+## Licencia
 
----
+[MIT](LICENSE). Las fuentes Open Sans incluidas para los PDF tienen licencia Apache 2.0 (ver `ingresosapp/recursos/fuentes/LICENCIA.txt`).
 
-## Technologies and libraries used
+## Autor
 
-- **Python 3:** Main language.
-- **Tkinter:** To create the window and forms.
-- **SQLite3:** Embedded database.
-- **FPDF:** For generating PDF files.
-- **datetime:** To automatically capture date and time.
-
----
-
-## Structure and key variables
-
-- **Variables:**  
-  - `miDomain`, `miBusiness`, `miParticular`, `miDestination` → information fields.  
-  - `miDate`, `miHour` → generated automatically when saving or updating.
-- **Database table:**  
-  - `empleado (ID, DATE, HOUR, DOMAIN, BUSINESS, PARTICULAR, DESTINATION)`
-- **Main window:**  
-  - Inputs for domain, company, individual, and destination.
-  - Buttons for CRUD operations and export to PDF.
-  - Table (`Treeview`) to display the records.
-- **Key functions:**  
-  - `crear()`: Inserts a new record.
-  - `actualizar()`: Modifies the selected record.
-  - `borrar()`: Deletes the selected record.
-  - `mostrar()`: Updates the table.
-  - `exportar()`: Generates the PDF.
-
----
-
-## How to use it?
-
-1. **Requirements**
-   - Python 3
-   - Install dependencies:
-   ```bash
-     pip install fpdf
-   ```
-1. **Run**
-   ```bash
-   python app.py
-   ```
-2.  **Interface**
-
-   - Fill in the fields and use the buttons to manage the records.
-   - The date and time are recorded automatically.
-   - Export to PDF whenever you need it.
-
-![Example of modifying a record](./screenshots/app-funcionando-2.png)
-
----
-
-![Example of generated PDF record](./screenshots/ingresos-pdf.png)
+**Lucas Emanuel Santoro** · [lucassantoro.com.ar](https://www.lucassantoro.com.ar/) · [lucassantoroemanuel@gmail.com](mailto:lucassantoroemanuel@gmail.com)

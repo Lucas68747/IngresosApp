@@ -1,0 +1,26 @@
+name: Pruebas
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  pruebas:
+    strategy:
+      fail-fast: false
+      matrix:
+        sistema: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.sistema }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Tests (Windows)
+        if: runner.os == 'Windows'
+        run: python -m pytest -q
+      - name: Tests (Linux, con pantalla virtual para la interfaz)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m pytest -q

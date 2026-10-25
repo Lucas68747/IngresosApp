@@ -331,26 +331,6 @@ class DialogoContacto(Dialogo):
         self.destroy()
 
 
-class DialogoTexto(Dialogo):
-    """Pide un texto corto, por ejemplo el nombre del puesto."""
-
-    def __init__(self, padre: tk.Misc, titulo: str, explicacion: str, valor: str = ""):
-        super().__init__(padre, titulo)
-        ttk.Label(self.cuerpo, text=titulo, style="Titulo.TLabel").pack(anchor="w")
-        ttk.Label(self.cuerpo, text=explicacion, style="Suave.TLabel", justify="left").pack(anchor="w", pady=(4, 12))
-        self.entrada = ttk.Entry(self.cuerpo, width=48)
-        self.entrada.insert(0, valor)
-        self.entrada.pack(fill="x")
-        self.entrada.focus_set()
-        self.entrada.select_range(0, "end")
-        self.botonera("Guardar", self.aceptar)
-        self.bind("<Return>", lambda _e: self.aceptar())
-
-    def aceptar(self) -> None:
-        self.resultado = " ".join(self.entrada.get().split())
-        self.destroy()
-
-
 class AcercaDe(Dialogo):
     def __init__(self, padre: tk.Misc, carpeta_datos: Path):
         super().__init__(padre, "Acerca de IngresosApp")
@@ -397,3 +377,197 @@ class AcercaDe(Dialogo):
             style="Suave.TLabel", justify="left", wraplength=460,
         ).pack(anchor="w", pady=(14, 0))
         self.botonera("Cerrar", self.cancelar, cancelar=False)
+
+
+class DialogoFechas(Dialogo):
+    """Pide un rango de fechas para un reporte."""
+
+    def __init__(self, padre: tk.Misc):
+        super().__init__(padre, "Elegir fechas")
+        from datetime import date
+
+        ttk.Label(self.cuerpo, text="Período del reporte", style="Titulo.TLabel").pack(anchor="w")
+        ttk.Label(self.cuerpo, text="Escribí las fechas como dd/mm/aaaa. Se incluyen ambos días.",
+                  style="Suave.TLabel").pack(anchor="w", pady=(4, 12))
+        fila = ttk.Frame(self.cuerpo, style="Panel.TFrame")
+        fila.pack(anchor="w")
+        hoy = date.today().strftime("%d/%m/%Y")
+        ttk.Label(fila, text="Desde", style="Campo.TLabel").pack(side="left")
+        self.desde = ttk.Entry(fila, width=12)
+        self.desde.insert(0, date.today().replace(day=1).strftime("%d/%m/%Y"))
+        self.desde.pack(side="left", padx=(8, 16))
+        ttk.Label(fila, text="Hasta", style="Campo.TLabel").pack(side="left")
+        self.hasta = ttk.Entry(fila, width=12)
+        self.hasta.insert(0, hoy)
+        self.hasta.pack(side="left", padx=(8, 0))
+        self.botonera("Aceptar", self.aceptar)
+        self.bind("<Return>", lambda _e: self.aceptar())
+        self.desde.focus_set()
+
+    def aceptar(self) -> None:
+        from ..reportes import Periodo
+
+        try:
+            desde, hasta = formato.leer_fecha(self.desde.get()), formato.leer_fecha(self.hasta.get())
+        except ErrorDeDatos as e:
+            self.error(e)
+            return
+        if desde > hasta:
+            self.error(ErrorDeDatos("La fecha «Desde» tiene que ser anterior o igual a «Hasta»."))
+            return
+        self.resultado = Periodo(desde, hasta)
+        self.destroy()
+
+
+class DialogoCorreo(Dialogo):
+    """Configuración del envío de reportes por correo (la hace el encargado una vez)."""
+
+    def __init__(self, padre: tk.Misc, base: BaseDeDatos):
+        from .. import correo
+
+        super().__init__(padre, "Envío por correo")
+        self.base = base
+        self.correo = correo
+        config = correo.leer_config(base)
+        self.tenia_contrasena = bool(correo.contrasena_guardada(config.remitente))
+
+        ttk.Label(self.cuerpo, text="Envío de reportes por correo", style="Titulo.TLabel").pack(anchor="w")
+        ttk.Label(
+            self.cuerpo,
+            text="Lo completa el encargado una sola vez. Los reportes se envían desde esta cuenta\n"
+                 "a las direcciones que indiques. La agenda nunca se envía.",
+            style="Suave.TLabel", justify="left",
+        ).pack(anchor="w", pady=(4, 12))
+
+        ttk.Label(self.cuerpo, text="Enviar los reportes a", style="Campo.TLabel").pack(anchor="w")
+        self.destinatarios = ttk.Entry(self.cuerpo, width=56)
+        self.destinatarios.insert(0, config.destinatarios)
+        self.destinatarios.pack(fill="x", pady=(4, 0))
+        ttk.Label(self.cuerpo, text="Para varias direcciones, separalas con una coma.",
+                  style="Suave.TLabel").pack(anchor="w", pady=(2, 12))
+
+        cuenta = ttk.LabelFrame(self.cuerpo, text=" Cuenta que envía ", padding=12)
+        cuenta.pack(fill="x")
+        cuenta.columnconfigure(1, weight=1)
+        nombres = {clave: nombre for clave, (nombre, _s, _p) in correo.PROVEEDORES.items()}
+        self._claves = {nombre: clave for clave, nombre in nombres.items()}
+        self.proveedor = ttk.Combobox(cuenta, values=list(nombres.values()), state="readonly", width=34)
+        self.proveedor.set(nombres.get(config.proveedor, nombres["otro"]))
+        self.proveedor.bind("<<ComboboxSelected>>", lambda _e: self._cambio_proveedor())
+        self.remitente = ttk.Entry(cuenta, width=40)
+        self.remitente.insert(0, config.remitente)
+        self.contrasena = ttk.Entry(cuenta, width=40, show="•")
+        self.servidor = ttk.Entry(cuenta, width=40)
+        self.servidor.insert(0, config.servidor)
+        self.puerto = ttk.Entry(cuenta, width=8)
+        self.puerto.insert(0, str(config.puerto))
+        filas = [("Proveedor", self.proveedor), ("Correo", self.remitente),
+                 ("Contraseña de aplicación", self.contrasena), ("Servidor SMTP", self.servidor),
+                 ("Puerto", self.puerto)]
+        for i, (etiqueta, campo) in enumerate(filas):
+            ttk.Label(cuenta, text=etiqueta, style="Panel.TLabel").grid(row=i, column=0, sticky="w", padx=(0, 12), pady=4)
+            campo.grid(row=i, column=1, sticky="w" if campo is self.puerto else "ew", pady=4)
+        ayuda = ttk.Frame(cuenta, style="Panel.TFrame")
+        ayuda.grid(row=len(filas), column=1, sticky="w")
+        texto = ("Ya hay una contraseña guardada: dejá el campo vacío para conservarla."
+                 if self.tenia_contrasena else "No es la contraseña habitual del correo.")
+        ttk.Label(ayuda, text=texto, style="Suave.TLabel").pack(anchor="w")
+        ttk.Button(ayuda, text="Cómo generar una contraseña de aplicación en Gmail", style="Enlace.TButton",
+                   cursor="hand2", command=lambda: webbrowser.open(correo.AYUDA_GMAIL)).pack(anchor="w")
+        self._cambio_proveedor(inicial=True)
+
+        ttk.Label(
+            self.cuerpo,
+            text="La contraseña se guarda en el almacén seguro del sistema (en Windows, el Administrador de\n"
+                 "credenciales), nunca en la base de datos. Conviene usar una cuenta creada solo para la garita.",
+            style="Suave.TLabel", justify="left",
+        ).pack(anchor="w", pady=(10, 0))
+        self.estado = ttk.Label(self.cuerpo, style="Aviso.TLabel")
+        self.estado.pack(anchor="w", pady=(8, 0))
+
+        barra = self.botonera("Guardar", self.aceptar)
+        self.boton_prueba = ttk.Button(barra, text="Enviar correo de prueba", style="Contorno.TButton",
+                                       command=self.probar)
+        self.boton_prueba.pack(side="left")
+        self.destinatarios.focus_set()
+
+    def _cambio_proveedor(self, inicial: bool = False) -> None:
+        clave = self._claves[self.proveedor.get()]
+        _nombre, servidor, puerto = self.correo.PROVEEDORES[clave]
+        if clave != "otro":
+            for campo, valor in ((self.servidor, servidor), (self.puerto, str(puerto))):
+                campo.state(["!disabled"])
+                campo.delete(0, "end")
+                campo.insert(0, valor)
+                campo.state(["disabled"])
+        else:
+            self.servidor.state(["!disabled"])
+            self.puerto.state(["!disabled"])
+            if not inicial:
+                self.servidor.delete(0, "end")
+
+    def _config(self):
+        try:
+            puerto = int(self.puerto.get().strip() or "587")
+        except ValueError:
+            raise self.correo.ErrorDeCorreo("El puerto tiene que ser un número (por lo general 587).")
+        return self.correo.ConfigCorreo(
+            destinatarios=self.destinatarios.get().strip(),
+            remitente=self.remitente.get().strip(),
+            proveedor=self._claves[self.proveedor.get()],
+            servidor=self.servidor.get().strip(),
+            puerto=puerto,
+        )
+
+    def _guardar(self) -> bool:
+        try:
+            self.correo.guardar_config(self.base, self._config(), self.contrasena.get() or None)
+        except self.correo.ErrorDeCorreo as e:
+            self.error(e)
+            return False
+        return True
+
+    def aceptar(self) -> None:
+        if self._guardar():
+            self.resultado = True
+            self.destroy()
+
+    def probar(self) -> None:
+        import threading
+
+        if not self._guardar():
+            return
+        config = self.correo.leer_config(self.base)
+        clave = self.correo.contrasena_guardada(config.remitente)
+        if not clave:
+            self.error(ErrorDeDatos("Falta la contraseña de aplicación."))
+            return
+        self.estado.configure(text="Enviando correo de prueba…")
+        self.boton_prueba.state(["disabled"])
+        resultado: list[str] = []
+
+        def tarea():
+            try:
+                self.correo.enviar(config, clave, "IngresosApp · Correo de prueba",
+                                   "Si llegó este correo, el envío de reportes de IngresosApp está bien configurado.")
+                resultado.append("ok")
+            except self.correo.ErrorDeCorreo as e:
+                resultado.append(str(e))
+
+        hilo = threading.Thread(target=tarea, daemon=True)
+        hilo.start()
+
+        def esperar():
+            if hilo.is_alive():
+                self.after(200, esperar)
+                return
+            if not self.winfo_exists():
+                return
+            self.boton_prueba.state(["!disabled"])
+            if resultado and resultado[0] == "ok":
+                self.estado.configure(text=f"Listo: se envió un correo de prueba a {config.destinatarios}.")
+            else:
+                self.estado.configure(text="")
+                self.error(ErrorDeDatos(resultado[0] if resultado else "No se pudo enviar."))
+
+        esperar()
