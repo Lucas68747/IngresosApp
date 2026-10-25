@@ -434,19 +434,11 @@ class DialogoCorreo(Dialogo):
         ttk.Label(self.cuerpo, text="Envío de reportes por correo", style="Titulo.TLabel").pack(anchor="w")
         ttk.Label(
             self.cuerpo,
-            text="Lo completa el encargado una sola vez. Los reportes se envían desde esta cuenta\n"
-                 "a las direcciones que indiques. La agenda nunca se envía.",
+            text="Lo completa el encargado una sola vez. La agenda nunca se envía.",
             style="Suave.TLabel", justify="left",
         ).pack(anchor="w", pady=(4, 12))
 
-        ttk.Label(self.cuerpo, text="Enviar los reportes a", style="Campo.TLabel").pack(anchor="w")
-        self.destinatarios = ttk.Entry(self.cuerpo, width=56)
-        self.destinatarios.insert(0, config.destinatarios)
-        self.destinatarios.pack(fill="x", pady=(4, 0))
-        ttk.Label(self.cuerpo, text="Para varias direcciones, separalas con una coma.",
-                  style="Suave.TLabel").pack(anchor="w", pady=(2, 12))
-
-        cuenta = ttk.LabelFrame(self.cuerpo, text=" Cuenta que envía ", padding=12)
+        cuenta = ttk.LabelFrame(self.cuerpo, text=" 1. Cuenta desde la que se envían ", padding=12)
         cuenta.pack(fill="x")
         cuenta.columnconfigure(1, weight=1)
         nombres = {clave: nombre for clave, (nombre, _s, _p) in correo.PROVEEDORES.items()}
@@ -461,7 +453,7 @@ class DialogoCorreo(Dialogo):
         self.servidor.insert(0, config.servidor)
         self.puerto = ttk.Entry(cuenta, width=8)
         self.puerto.insert(0, str(config.puerto))
-        filas = [("Proveedor", self.proveedor), ("Correo", self.remitente),
+        filas = [("Proveedor", self.proveedor), ("Correo electrónico", self.remitente),
                  ("Contraseña de aplicación", self.contrasena), ("Servidor SMTP", self.servidor),
                  ("Puerto", self.puerto)]
         for i, (etiqueta, campo) in enumerate(filas):
@@ -476,6 +468,15 @@ class DialogoCorreo(Dialogo):
                    cursor="hand2", command=lambda: webbrowser.open(correo.AYUDA_GMAIL)).pack(anchor="w")
         self._cambio_proveedor(inicial=True)
 
+        recibe = ttk.LabelFrame(self.cuerpo, text=" 2. ¿Quién recibe los reportes? ", padding=12)
+        recibe.pack(fill="x", pady=(12, 0))
+        self.destinatarios = ttk.Entry(recibe, width=56)
+        self.destinatarios.insert(0, config.destinatarios)
+        self.destinatarios.pack(fill="x")
+        ttk.Label(recibe, text="Correos electrónicos separados por coma, por ejemplo encargado@gmail.com.\n"
+                               "Si lo dejás vacío, llegan a la misma cuenta de arriba.",
+                  style="Suave.TLabel", justify="left").pack(anchor="w", pady=(4, 0))
+
         ttk.Label(
             self.cuerpo,
             text="La contraseña se guarda en el almacén seguro del sistema (en Windows, el Administrador de\n"
@@ -489,7 +490,7 @@ class DialogoCorreo(Dialogo):
         self.boton_prueba = ttk.Button(barra, text="Enviar correo de prueba", style="Contorno.TButton",
                                        command=self.probar)
         self.boton_prueba.pack(side="left")
-        self.destinatarios.focus_set()
+        (self.remitente if not config.remitente else self.destinatarios).focus_set()
 
     def _cambio_proveedor(self, inicial: bool = False) -> None:
         clave = self._claves[self.proveedor.get()]
@@ -527,6 +528,11 @@ class DialogoCorreo(Dialogo):
             return False
         return True
 
+    def error(self, e: Exception) -> None:
+        # Además del aviso, queda escrito en la ventana por si el aviso queda detrás.
+        self.estado.configure(text=str(e), style="Error.TLabel", wraplength=520)
+        super().error(e)
+
     def aceptar(self) -> None:
         if self._guardar():
             self.resultado = True
@@ -542,7 +548,7 @@ class DialogoCorreo(Dialogo):
         if not clave:
             self.error(ErrorDeDatos("Falta la contraseña de aplicación."))
             return
-        self.estado.configure(text="Enviando correo de prueba…")
+        self.estado.configure(text="Enviando correo de prueba…", style="Aviso.TLabel")
         self.boton_prueba.state(["disabled"])
         resultado: list[str] = []
 
@@ -565,9 +571,9 @@ class DialogoCorreo(Dialogo):
                 return
             self.boton_prueba.state(["!disabled"])
             if resultado and resultado[0] == "ok":
-                self.estado.configure(text=f"Listo: se envió un correo de prueba a {config.destinatarios}.")
+                self.estado.configure(text=f"Listo: se envió un correo de prueba a {config.texto_destinatarios}.",
+                                      style="Aviso.TLabel")
             else:
-                self.estado.configure(text="")
                 self.error(ErrorDeDatos(resultado[0] if resultado else "No se pudo enviar."))
 
         esperar()

@@ -97,3 +97,34 @@ def test_sin_configurar():
 def test_mailto():
     enlace = correo.enlace_mailto("a@b.com", "Reporte 24/10/2026", "Hola, adjunto el PDF.")
     assert enlace.startswith("mailto:a@b.com?subject=Reporte%2024/10/2026")
+
+
+def test_si_falla_el_almacen_no_se_pierde_el_resto(base, monkeypatch):
+    def falla(*a):
+        raise RuntimeError("No recommended backend was available")
+
+    monkeypatch.setitem(sys.modules, "keyring", types.SimpleNamespace(
+        set_password=falla, get_password=lambda s, u: None, delete_password=falla))
+    config = correo.ConfigCorreo(destinatarios="encargado@ejemplo.com", remitente="garita@gmail.com")
+    with pytest.raises(correo.ErrorDeCorreo, match="no la contraseña"):
+        correo.guardar_config(base, config, "abcdefghijklmnop")
+    guardada = correo.leer_config(base)
+    assert (guardada.destinatarios, guardada.remitente) == ("encargado@ejemplo.com", "garita@gmail.com")
+
+
+def test_un_nombre_en_lugar_de_correo_da_un_error_claro():
+    with pytest.raises(correo.ErrorDeCorreo, match="no es una dirección de correo"):
+        correo.separar_direcciones("Lucas Santoro")
+
+
+def test_acepta_nombre_con_correo_entre_signos():
+    assert correo.separar_direcciones("Lucas Santoro <lucas@gmail.com>, otro@empresa.com.ar") == [
+        "lucas@gmail.com", "otro@empresa.com.ar"]
+
+
+def test_sin_destinatarios_llega_a_la_cuenta_que_envia(base):
+    config = correo.ConfigCorreo(destinatarios="", remitente="garita@gmail.com")
+    assert config.completa
+    assert config.lista_destinatarios() == ["garita@gmail.com"]
+    correo.guardar_config(base, config)
+    assert correo.leer_config(base).lista_destinatarios() == ["garita@gmail.com"]

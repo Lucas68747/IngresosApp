@@ -28,6 +28,7 @@ COLORES = {
     "suave": "#5b6575",
     "anulado": "#8a919c",
     "fila_par": "#f8f9fb",
+    "error": "#b42318",
 }
 
 FAMILIAS_PREFERIDAS = ("Segoe UI", "Noto Sans", "Open Sans", "DejaVu Sans")
@@ -82,6 +83,7 @@ def aplicar(root: tk.Tk) -> dict[str, tkfont.Font]:
     st.configure("Campo.TLabel", background=c["panel"], font=fuentes["negrita"])
     st.configure("Suave.TLabel", background=c["panel"], foreground=c["suave"], font=fuentes["chica"])
     st.configure("Aviso.TLabel", background=c["panel"], foreground=c["azul"], font=fuentes["negrita"])
+    st.configure("Error.TLabel", background=c["panel"], foreground=c["error"], font=fuentes["negrita"])
     st.configure("Titulo.TLabel", background=c["panel"], foreground=c["noche"], font=fuentes["titulo"])
     st.configure("Noche.TLabel", background=c["noche"], foreground="#ffffff", font=fuentes["grande"])
     st.configure("NocheSuave.TLabel", background=c["noche"], foreground=c["noche_texto"], font=fuentes["chica"])

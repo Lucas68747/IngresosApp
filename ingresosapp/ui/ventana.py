@@ -733,7 +733,7 @@ class VentanaPrincipal:
             return
         if not messagebox.askyesno(
             "Enviar por correo",
-            f"¿Enviar el reporte {periodo.texto()} a {config.destinatarios}?", parent=self.root,
+            f"¿Enviar el reporte {periodo.texto()} a {config.texto_destinatarios}?", parent=self.root,
         ):
             return
         ruta = self._generar_pdf(periodo, self._carpeta_reportes() / periodo.nombre_archivo())
@@ -755,7 +755,7 @@ class VentanaPrincipal:
             if hilo.is_alive():
                 self.root.after(200, esperar)
             elif resultado and resultado[0] == "ok":
-                self.mensaje(f"Reporte {periodo.texto()} enviado a {config.destinatarios}.")
+                self.mensaje(f"Reporte {periodo.texto()} enviado a {config.texto_destinatarios}.")
             else:
                 self.mensaje("No se pudo enviar el reporte.")
                 messagebox.showwarning("Enviar por correo", resultado[0] if resultado else "No se pudo enviar.",

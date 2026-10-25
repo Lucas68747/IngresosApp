@@ -63,6 +63,9 @@ def main() -> None:
         "--clean",
         "--icon", str(recursos / "icono.ico"),
         "--add-data", f"{recursos}{os.pathsep}ingresosapp/recursos",
+        # keyring busca sus almacenes de contraseñas por metadatos: hay que incluirlos.
+        "--collect-submodules", "keyring.backends",
+        "--copy-metadata", "keyring",
         "--distpath", str(RAIZ / "dist"),
         "--workpath", str(RAIZ / "build"),
         "--specpath", str(RAIZ / "build"),
