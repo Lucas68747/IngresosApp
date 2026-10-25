@@ -2,7 +2,7 @@
 
 Se guardan siempre en mayúsculas y sin espacios ni guiones, así
 "ab 123 cd", "AB-123-CD" y "AB123CD" son el mismo vehículo al buscar.
-Para mostrarlos se agregan los espacios de los formatos argentinos.
+Para mostrarlos se separan los grupos de letras y de números.
 No se rechaza ningún formato: también entran motos, patentes viejas o
 extranjeras.
 """
@@ -12,8 +12,7 @@ from __future__ import annotations
 import re
 
 _SEPARADORES = re.compile(r"[\s\-\.·_]+")
-_MERCOSUR = re.compile(r"^([A-Z]{2})(\d{3})([A-Z]{2})$")  # AB123CD
-_ANTERIOR = re.compile(r"^([A-Z]{3})(\d{3})$")  # ABC123
+_GRUPOS = re.compile(r"[A-Z]+|\d+|[^A-Z\d]+")
 
 
 def normalizar_dominio(texto: str | None) -> str:
@@ -23,9 +22,5 @@ def normalizar_dominio(texto: str | None) -> str:
 
 
 def formatear_dominio(dominio: str | None) -> str:
-    dominio = normalizar_dominio(dominio)
-    if m := _MERCOSUR.match(dominio):
-        return " ".join(m.groups())
-    if m := _ANTERIOR.match(dominio):
-        return " ".join(m.groups())
-    return dominio
+    """Separa letras y números: AB123CD → AB 123 CD, ABC123 → ABC 123."""
+    return " ".join(_GRUPOS.findall(normalizar_dominio(dominio)))

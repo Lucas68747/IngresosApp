@@ -53,7 +53,8 @@ def ingreso(base, **cambios):
         ("ab 123 cd", "AB123CD", "AB 123 CD"),
         ("AB-123-CD", "AB123CD", "AB 123 CD"),
         ("abc123", "ABC123", "ABC 123"),
-        ("A123BCD", "A123BCD", "A123BCD"),  # moto: se guarda tal cual
+        ("A123BCD", "A123BCD", "A 123 BCD"),  # moto
+        ("ABL 3212 GH", "ABL3212GH", "ABL 3212 GH"),  # formato no estándar: igual se lee bien
         ("", "", ""),
         (None, "", ""),
     ],
