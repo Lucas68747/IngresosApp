@@ -1,0 +1,1 @@
+"""Interfaz de IngresosApp (Tkinter)."""
