@@ -66,6 +66,8 @@ def main() -> None:
             parent=root,
         )
     try:
+        if base.ajuste("tipo_predio") is None:
+            ventana.configurar_puesto(inicial=True)
         if base.turno_actual() is None:
             ventana.cambiar_turno(obligatorio=True)
         if ventana.cerrada:

@@ -12,6 +12,12 @@ y la numeración, [Versionado Semántico](https://semver.org/lang/es/): `MAYOR.M
 - Historial de cada registro: qué cambió, cuándo y quién lo cambió.
 - Búsqueda por dominio, empresa, persona, destino u observaciones.
 - Copia de seguridad automática diaria, con las últimas 30 copias.
+- Agenda de la guardia: lotes, casas, empresas o sectores con sus teléfonos y notas. Al escribir el
+  destino o la empresa, aparece la ficha del contacto. Sus datos se pueden editar y eliminar, y nunca
+  salen en los reportes.
+- Campo opcional «Autorizó», para anotar quién dio el permiso de ingreso.
+- Tipo de lugar (barrio cerrado, parque industrial, empresa u otro) para adaptar los ejemplos y las ayudas.
+- Recorrido de la primera vez que explica cada parte de la ventana.
 - Importación automática de los datos de la versión 1.0, sin modificar el archivo original.
 
 ### Cambiado

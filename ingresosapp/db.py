@@ -8,6 +8,9 @@ Reglas que sostiene esta capa, sin importar cómo sea la interfaz:
 - Cada ingreso, salida, modificación y anulación queda en un historial
   con la hora y la guardia que lo hizo.
 - Los datos de la versión 1.0 se importan sin modificar el archivo original.
+- La agenda de contactos es distinta: guarda datos personales (nombres y
+  teléfonos), así que sus entradas se pueden corregir y eliminar de verdad,
+  y nunca salen en los reportes.
 """
 
 from __future__ import annotations
@@ -21,13 +24,19 @@ from typing import Callable, Iterable
 
 from .patentes import normalizar_dominio
 
-VERSION_ESQUEMA = 2
+VERSION_ESQUEMA = 3
 FORMATO_FECHA_HORA = "%Y-%m-%d %H:%M:%S"
 TIPOS = ("vehiculo", "peaton")
-CAMPOS_EDITABLES = ("tipo", "dominio", "empresa", "particular", "destino", "observaciones")
+CAMPOS_EDITABLES = ("tipo", "dominio", "empresa", "particular", "destino", "autorizo", "observaciones")
 CAMPOS_CON_SUGERENCIAS = ("empresa", "particular", "destino")
-LARGO_MAXIMO = {"dominio": 15, "empresa": 120, "particular": 120, "destino": 120, "observaciones": 500}
+LARGO_MAXIMO = {
+    "dominio": 15, "empresa": 120, "particular": 120, "destino": 120, "autorizo": 120, "observaciones": 500,
+}
+CAMPOS_AGENDA = ("nombre", "ubicacion", "telefonos", "contacto", "notas")
+LARGO_AGENDA = {"nombre": 120, "ubicacion": 120, "telefonos": 120, "contacto": 120, "notas": 500}
 
+# Esquema inicial (versión 2). Los cambios posteriores están en MIGRACIONES,
+# así una base creada con una versión anterior se actualiza sola.
 ESQUEMA = """
 CREATE TABLE registros (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,6 +103,25 @@ BEGIN
 END;
 """
 
+MIGRACIONES = {
+    3: """
+    -- Quién autorizó el ingreso (por ejemplo, el vecino que atendió el llamado).
+    ALTER TABLE registros ADD COLUMN autorizo TEXT NOT NULL DEFAULT '';
+
+    -- Agenda de la guardia: lotes, casas, empresas o sectores con sus teléfonos.
+    CREATE TABLE agenda (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre      TEXT NOT NULL,
+        ubicacion   TEXT NOT NULL DEFAULT '',
+        telefonos   TEXT NOT NULL DEFAULT '',
+        contacto    TEXT NOT NULL DEFAULT '',
+        notas       TEXT NOT NULL DEFAULT '',
+        actualizado TEXT NOT NULL
+    );
+    CREATE INDEX idx_agenda_nombre ON agenda (nombre COLLATE NOCASE);
+    """,
+}
+
 
 class ErrorDeDatos(ValueError):
     """Error con un mensaje listo para mostrarle a la guardia."""
@@ -117,6 +145,7 @@ class Registro:
     anulado_en: str | None
     anulado_por: str
     origen: str
+    autorizo: str
 
     @property
     def adentro(self) -> bool:
@@ -138,6 +167,17 @@ class Movimiento:
     guardia: str
     accion: str
     detalle: str
+
+
+@dataclass(frozen=True)
+class Contacto:
+    id: int
+    nombre: str
+    ubicacion: str
+    telefonos: str
+    contacto: str
+    notas: str
+    actualizado: str
 
 
 @dataclass(frozen=True)
@@ -194,15 +234,17 @@ class BaseDeDatos:
 
     def _preparar_esquema(self) -> None:
         version = self.conn.execute("PRAGMA user_version").fetchone()[0]
-        if version == 0:
-            with self.conn:
-                self.conn.executescript(ESQUEMA)
-                self.conn.execute(f"PRAGMA user_version = {VERSION_ESQUEMA}")
-        elif version > VERSION_ESQUEMA:
+        if version > VERSION_ESQUEMA:
             raise ErrorDeDatos(
                 "Esta base de datos fue creada con una versión más nueva de IngresosApp. "
                 "Actualizá la aplicación para abrirla."
             )
+        if version == 0:
+            self.conn.executescript(ESQUEMA)
+            version = 2
+            self.conn.execute(f"PRAGMA user_version = {version}")
+        for siguiente in range(version + 1, VERSION_ESQUEMA + 1):
+            self.conn.executescript(f"BEGIN; {MIGRACIONES[siguiente]} PRAGMA user_version = {siguiente}; COMMIT;")
 
     def _ahora(self) -> str:
         return self._reloj().strftime(FORMATO_FECHA_HORA)
@@ -281,6 +323,7 @@ class BaseDeDatos:
         empresa: str = "",
         particular: str,
         destino: str,
+        autorizo: str = "",
         observaciones: str = "",
     ) -> Registro:
         datos = self._validar(locals())
@@ -289,8 +332,9 @@ class BaseDeDatos:
         with self.conn:
             cursor = self.conn.execute(
                 """INSERT INTO registros
-                   (tipo, dominio, empresa, particular, destino, observaciones, ingreso, guardia_ingreso)
-                   VALUES (:tipo, :dominio, :empresa, :particular, :destino, :observaciones, :ingreso, :guardia)""",
+                   (tipo, dominio, empresa, particular, destino, autorizo, observaciones, ingreso, guardia_ingreso)
+                   VALUES (:tipo, :dominio, :empresa, :particular, :destino, :autorizo, :observaciones,
+                           :ingreso, :guardia)""",
                 {**datos, "ingreso": ahora, "guardia": guardia},
             )
             registro_id = cursor.lastrowid
@@ -460,6 +504,86 @@ class BaseDeDatos:
             (registro_id,),
         )
         return [Movimiento(**dict(f)) for f in filas]
+
+    # ------------------------------------------------------------------
+    # Agenda
+    # ------------------------------------------------------------------
+
+    def agenda(self, texto: str = "") -> list[Contacto]:
+        texto = " ".join(texto.split())
+        if texto:
+            patron = f"%{_escapar_like(texto)}%"
+            filas = self.conn.execute(
+                """SELECT * FROM agenda
+                   WHERE nombre LIKE ? ESCAPE '\\' OR ubicacion LIKE ? ESCAPE '\\'
+                      OR contacto LIKE ? ESCAPE '\\' OR telefonos LIKE ? ESCAPE '\\'
+                      OR notas LIKE ? ESCAPE '\\'
+                   ORDER BY nombre COLLATE NOCASE""",
+                (patron,) * 5,
+            )
+        else:
+            filas = self.conn.execute("SELECT * FROM agenda ORDER BY nombre COLLATE NOCASE")
+        return [Contacto(**dict(f)) for f in filas]
+
+    def contacto(self, contacto_id: int) -> Contacto:
+        fila = self.conn.execute("SELECT * FROM agenda WHERE id = ?", (contacto_id,)).fetchone()
+        if fila is None:
+            raise ErrorDeDatos("Ese contacto ya no está en la agenda.")
+        return Contacto(**dict(fila))
+
+    def guardar_contacto(self, contacto_id: int | None = None, **datos: str) -> Contacto:
+        """Crea un contacto (sin id) o reemplaza los datos de uno existente."""
+        desconocidos = set(datos) - set(CAMPOS_AGENDA)
+        if desconocidos:
+            raise ErrorDeDatos(f"Campos desconocidos en la agenda: {', '.join(sorted(desconocidos))}.")
+        limpio = {campo: " ".join(str(datos.get(campo, "") or "").split()) for campo in CAMPOS_AGENDA}
+        limpio["notas"] = str(datos.get("notas", "") or "").strip()
+        if not limpio["nombre"]:
+            raise ErrorDeDatos("Falta el nombre: el lote, la casa, la empresa o el sector.")
+        for campo, maximo in LARGO_AGENDA.items():
+            if len(limpio[campo]) > maximo:
+                raise ErrorDeDatos(f"El campo {campo} admite hasta {maximo} caracteres.")
+        limpio["actualizado"] = self._ahora()
+        with self.conn:
+            if contacto_id is None:
+                cursor = self.conn.execute(
+                    """INSERT INTO agenda (nombre, ubicacion, telefonos, contacto, notas, actualizado)
+                       VALUES (:nombre, :ubicacion, :telefonos, :contacto, :notas, :actualizado)""",
+                    limpio,
+                )
+                contacto_id = cursor.lastrowid
+            else:
+                self.contacto(contacto_id)
+                self.conn.execute(
+                    """UPDATE agenda SET nombre = :nombre, ubicacion = :ubicacion, telefonos = :telefonos,
+                       contacto = :contacto, notas = :notas, actualizado = :actualizado WHERE id = :id""",
+                    {**limpio, "id": contacto_id},
+                )
+        return self.contacto(contacto_id)
+
+    def eliminar_contacto(self, contacto_id: int) -> None:
+        """Borra el contacto de la base. Los registros de ingreso no se tocan."""
+        self.contacto(contacto_id)
+        with self.conn:
+            self.conn.execute("DELETE FROM agenda WHERE id = ?", (contacto_id,))
+
+    def contactos_para(self, *textos: str, limite: int = 3) -> list[Contacto]:
+        """Contactos que coinciden con lo escrito en Destino o Empresa, para mostrar el teléfono."""
+        encontrados: dict[int, Contacto] = {}
+        for texto in textos:
+            texto = " ".join((texto or "").split())
+            if len(texto) < 2:
+                continue
+            patron = f"%{_escapar_like(texto)}%"
+            filas = self.conn.execute(
+                """SELECT * FROM agenda
+                   WHERE nombre LIKE ? ESCAPE '\\' OR ? LIKE '%' || nombre || '%' OR ubicacion LIKE ? ESCAPE '\\'
+                   ORDER BY (nombre = ? COLLATE NOCASE) DESC, nombre COLLATE NOCASE LIMIT ?""",
+                (patron, texto, patron, texto, limite),
+            )
+            for fila in filas:
+                encontrados.setdefault(fila["id"], Contacto(**dict(fila)))
+        return list(encontrados.values())[:limite]
 
     # ------------------------------------------------------------------
     # Ajustes

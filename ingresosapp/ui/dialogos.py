@@ -8,10 +8,11 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from .. import __version__
-from ..db import BaseDeDatos, ErrorDeDatos, Registro
+from ..db import BaseDeDatos, Contacto, ErrorDeDatos, Registro
 from ..patentes import formatear_dominio
 from . import formato
 from .estilo import COLORES
+from .perfiles import PERFILES, Perfil
 
 RECURSOS = Path(__file__).resolve().parent.parent / "recursos"
 
@@ -152,11 +153,14 @@ class DialogoModificar(Dialogo):
         self.particular.set(registro.particular)
         self.destino = CampoAutocompletar(formulario, base, "destino", width=38)
         self.destino.set(registro.destino)
+        self.autorizo = ttk.Entry(formulario, width=40)
+        self.autorizo.insert(0, registro.autorizo)
         self.observaciones = ttk.Entry(formulario, width=40)
         self.observaciones.insert(0, registro.observaciones)
         filas = [
             ("Tipo", tipos), ("Dominio", self.dominio), ("Empresa", self.empresa),
-            ("Particular", self.particular), ("Destino", self.destino), ("Observaciones", self.observaciones),
+            ("Particular", self.particular), ("Destino", self.destino), ("Autorizó", self.autorizo),
+            ("Observaciones", self.observaciones),
         ]
         for fila, (etiqueta, campo) in enumerate(filas):
             ttk.Label(formulario, text=etiqueta, style="Campo.TLabel").grid(row=fila, column=0, sticky="w", pady=5, padx=(0, 14))
@@ -170,7 +174,7 @@ class DialogoModificar(Dialogo):
                 self.registro.id,
                 tipo=self.tipo.get(), dominio=self.dominio.get(), empresa=self.empresa.get(),
                 particular=self.particular.get(), destino=self.destino.get(),
-                observaciones=self.observaciones.get(),
+                autorizo=self.autorizo.get(), observaciones=self.observaciones.get(),
             )
         except ErrorDeDatos as e:
             self.error(e)
@@ -224,6 +228,107 @@ class DialogoHistorial(Dialogo):
         texto.configure(state="disabled")
         texto.pack(fill="both", expand=True)
         self.botonera("Cerrar", self.cancelar, cancelar=False)
+
+
+class DialogoPuesto(Dialogo):
+    """Dónde se usa la app y cómo se llama el puesto. Se pide la primera vez."""
+
+    def __init__(self, padre: tk.Misc, base: BaseDeDatos, inicial: bool = False):
+        super().__init__(padre, "Configuración del puesto")
+        self.base = base
+        self.inicial = inicial
+        ttk.Label(self.cuerpo, text="¿Dónde se usa IngresosApp?", style="Titulo.TLabel").pack(anchor="w")
+        ttk.Label(
+            self.cuerpo,
+            text="La app funciona igual en todos los casos: esto solo adapta los ejemplos y las ayudas.",
+            style="Suave.TLabel",
+        ).pack(anchor="w", pady=(4, 10))
+        self.tipo = tk.StringVar(value=base.ajuste("tipo_predio", "barrio") or "barrio")
+        for perfil in PERFILES.values():
+            ttk.Radiobutton(self.cuerpo, text=perfil.nombre, value=perfil.clave, variable=self.tipo,
+                            command=self._actualizar_ejemplo).pack(anchor="w", pady=2)
+        ttk.Label(self.cuerpo, text="Nombre del puesto", style="Campo.TLabel").pack(anchor="w", pady=(14, 0))
+        self.ejemplo = ttk.Label(self.cuerpo, style="Suave.TLabel")
+        self.ejemplo.pack(anchor="w")
+        self.nombre = ttk.Entry(self.cuerpo, width=50)
+        self.nombre.insert(0, base.ajuste("puesto", "") or "")
+        self.nombre.pack(fill="x", pady=(4, 0))
+        ttk.Label(self.cuerpo, text="Aparece arriba en la ventana y en los reportes.",
+                  style="Suave.TLabel").pack(anchor="w", pady=(4, 0))
+        self._actualizar_ejemplo()
+        self.botonera("Guardar", self.aceptar, cancelar=not inicial)
+        self.bind("<Return>", lambda _e: self.aceptar())
+        self.nombre.focus_set()
+
+    def _actualizar_ejemplo(self) -> None:
+        self.ejemplo.configure(text=f"Por ejemplo: {PERFILES[self.tipo.get()].ej_puesto}")
+
+    def cancelar(self) -> None:
+        if self.inicial:
+            self.aceptar()
+        else:
+            super().cancelar()
+
+    def aceptar(self) -> None:
+        self.base.guardar_ajuste("tipo_predio", self.tipo.get())
+        self.base.guardar_ajuste("puesto", " ".join(self.nombre.get().split()))
+        self.resultado = True
+        self.destroy()
+
+
+class DialogoContacto(Dialogo):
+    """Alta o edición de un contacto de la agenda."""
+
+    def __init__(self, padre: tk.Misc, base: BaseDeDatos, perfil: Perfil, contacto: Contacto | None = None):
+        super().__init__(padre, "Editar contacto" if contacto else "Nuevo contacto")
+        self.base = base
+        self.contacto = contacto
+        ttk.Label(self.cuerpo, text="Editar contacto" if contacto else "Nuevo contacto",
+                  style="Titulo.TLabel").pack(anchor="w")
+        ttk.Label(
+            self.cuerpo,
+            text=f"Por ejemplo: {perfil.agenda}.\nCargá solo lo necesario para el trabajo de la guardia.",
+            style="Suave.TLabel", justify="left",
+        ).pack(anchor="w", pady=(4, 12))
+        formulario = ttk.Frame(self.cuerpo, style="Panel.TFrame")
+        formulario.pack(fill="x")
+        formulario.columnconfigure(1, weight=1)
+        self.campos: dict[str, ttk.Entry] = {}
+        filas = [
+            ("nombre", "Nombre", f"ej.: {perfil.ej_agenda_nombre}"),
+            ("ubicacion", "Ubicación", "opcional"),
+            ("telefonos", "Teléfonos", "opcional · se pueden poner varios"),
+            ("contacto", "Contacto", "opcional · a quién llamar o quién autoriza"),
+        ]
+        for fila, (clave, etiqueta, ayuda) in enumerate(filas):
+            ttk.Label(formulario, text=etiqueta, style="Campo.TLabel").grid(row=fila * 2, column=0, sticky="w",
+                                                                              padx=(0, 14), pady=(6, 0))
+            entrada = ttk.Entry(formulario, width=44)
+            entrada.insert(0, getattr(contacto, clave, "") if contacto else "")
+            entrada.grid(row=fila * 2, column=1, sticky="ew", pady=(6, 0))
+            ttk.Label(formulario, text=ayuda, style="Suave.TLabel").grid(row=fila * 2 + 1, column=1, sticky="w")
+            self.campos[clave] = entrada
+        ttk.Label(formulario, text="Notas", style="Campo.TLabel").grid(row=8, column=0, sticky="nw", padx=(0, 14), pady=(8, 0))
+        self.notas = tk.Text(
+            formulario, height=3, width=44, wrap="word", relief="flat", padx=6, pady=5, font="TkDefaultFont",
+            highlightthickness=1, highlightbackground=COLORES["linea"], highlightcolor=COLORES["azul"],
+        )
+        self.notas.insert("1.0", contacto.notas if contacto else "")
+        self.notas.grid(row=8, column=1, sticky="ew", pady=(8, 0))
+        self.botonera("Guardar", self.aceptar)
+        self.campos["nombre"].focus_set()
+        for entrada in self.campos.values():
+            entrada.bind("<Return>", lambda _e: self.aceptar())
+
+    def aceptar(self) -> None:
+        datos = {clave: entrada.get() for clave, entrada in self.campos.items()}
+        datos["notas"] = self.notas.get("1.0", "end")
+        try:
+            self.resultado = self.base.guardar_contacto(self.contacto.id if self.contacto else None, **datos)
+        except ErrorDeDatos as e:
+            self.error(e)
+            return
+        self.destroy()
 
 
 class DialogoTexto(Dialogo):

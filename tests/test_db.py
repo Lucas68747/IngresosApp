@@ -336,3 +336,70 @@ def test_respaldos(base, reloj, tmp_path):
         "ingresos-2026-10-27.db",
         "ingresos-2026-10-28.db",
     ]
+
+
+# --- Agenda, «Autorizó» y migración del esquema 2 al 3 -----------------------------
+
+def test_autorizo_se_guarda_y_se_modifica_con_historial(base):
+    r = ingreso(base, autorizo="  Pérez,  Lote 34 ")
+    assert r.autorizo == "Pérez, Lote 34"
+    r = base.modificar(r.id, autorizo="Pérez por teléfono")
+    assert json.loads(base.historial(r.id)[-1].detalle) == {"autorizo": ["Pérez, Lote 34", "Pérez por teléfono"]}
+
+
+def test_agenda_alta_edicion_y_baja(base):
+    c = base.guardar_contacto(nombre=" Lote 34 ", contacto="Familia Pérez", telefonos="11 5555-1234")
+    assert (c.nombre, c.telefonos) == ("Lote 34", "11 5555-1234")
+    c = base.guardar_contacto(c.id, nombre="Lote 34", contacto="Familia Pérez", telefonos="11 5555-9999")
+    assert base.contacto(c.id).telefonos == "11 5555-9999"
+    assert len(base.agenda()) == 1
+    base.eliminar_contacto(c.id)
+    assert base.agenda() == []
+    assert base.conn.execute("SELECT COUNT(*) FROM agenda").fetchone()[0] == 0  # se borra de verdad
+    with pytest.raises(ErrorDeDatos, match="ya no está en la agenda"):
+        base.eliminar_contacto(c.id)
+
+
+def test_agenda_valida(base):
+    with pytest.raises(ErrorDeDatos, match="Falta el nombre"):
+        base.guardar_contacto(nombre=" ", telefonos="123")
+    with pytest.raises(ErrorDeDatos, match="desconocidos"):
+        base.guardar_contacto(nombre="Lote 1", dni="123")
+
+
+def test_agenda_busca_y_sugiere_para_el_formulario(base):
+    base.guardar_contacto(nombre="Lote 34", contacto="Familia Pérez", telefonos="11 5555-1234")
+    base.guardar_contacto(nombre="Molinos del Plata S.A.", ubicacion="Planta 2", telefonos="0800 444 1234")
+    base.guardar_contacto(nombre="Lote 35", contacto="Familia Gómez")
+    assert [c.nombre for c in base.agenda("pérez")] == ["Lote 34"]
+    assert [c.nombre for c in base.contactos_para("Lote 34 (casa del fondo)")] == ["Lote 34"]
+    assert [c.nombre for c in base.contactos_para("", "molinos")] == ["Molinos del Plata S.A."]
+    assert [c.nombre for c in base.contactos_para("planta 2")] == ["Molinos del Plata S.A."]
+    assert base.contactos_para("x") == []
+
+
+def test_la_agenda_no_afecta_a_los_registros(base):
+    c = base.guardar_contacto(nombre="Lote 34")
+    r = ingreso(base, destino="Lote 34")
+    base.eliminar_contacto(c.id)
+    assert base.obtener(r.id).destino == "Lote 34"
+
+
+def test_migracion_del_esquema_2_al_3(tmp_path):
+    from ingresosapp.db import ESQUEMA
+
+    ruta = tmp_path / "v2.db"
+    con = sqlite3.connect(ruta)
+    con.executescript(ESQUEMA)
+    con.execute("PRAGMA user_version = 2")
+    con.execute(
+        "INSERT INTO registros (tipo, dominio, particular, destino, ingreso) "
+        "VALUES ('vehiculo', 'AB123CD', 'Ramiro', 'Planta', '2026-10-24 08:00:00')"
+    )
+    con.commit()
+    con.close()
+    with BaseDeDatos(ruta) as b:
+        assert b.conn.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert b.obtener(1).autorizo == ""
+        b.guardar_contacto(nombre="Lote 1")
+        assert len(b.agenda()) == 1

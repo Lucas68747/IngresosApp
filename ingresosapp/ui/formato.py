@@ -15,6 +15,7 @@ CAMPOS = {
     "empresa": "Empresa",
     "particular": "Particular",
     "destino": "Destino",
+    "autorizo": "Autorizó",
     "observaciones": "Observaciones",
 }
 ACCIONES = {

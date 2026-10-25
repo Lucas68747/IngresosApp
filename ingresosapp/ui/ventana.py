@@ -12,16 +12,17 @@ from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 
 from .. import __version__, rutas
-from ..db import BaseDeDatos, ErrorDeDatos, Registro
+from ..db import BaseDeDatos, Contacto, ErrorDeDatos, Registro
 from ..patentes import formatear_dominio
-from . import estilo, formato
+from . import estilo, formato, perfiles
 from .dialogos import (
     AcercaDe,
     CampoAutocompletar,
     DialogoAnular,
+    DialogoContacto,
     DialogoHistorial,
     DialogoModificar,
-    DialogoTexto,
+    DialogoPuesto,
     DialogoTurno,
 )
 from .estilo import COLORES
@@ -41,9 +42,19 @@ COLUMNAS = {
     "guardia": ("Guardia", 100, False, "w"),
     "tiempo": ("Adentro hace", 100, False, "w"),
     "estado": ("Estado", 104, False, "w"),
+    "autorizo": ("Autorizó", 150, True, "w"),
+    "nombre": ("Nombre", 170, True, "w"),
+    "ubicacion": ("Ubicación", 130, False, "w"),
+    "telefonos": ("Teléfonos", 160, False, "w"),
+    "contacto": ("Contacto", 160, True, "w"),
+    "notas": ("Notas", 220, True, "w"),
 }
 COLUMNAS_ADENTRO = ("n", "ingreso", "tipo", "dominio", "empresa", "particular", "destino", "guardia", "tiempo")
-COLUMNAS_DIA = ("n", "ingreso", "salida", "tipo", "dominio", "empresa", "particular", "destino", "guardia", "estado")
+COLUMNAS_DIA = (
+    "n", "ingreso", "salida", "tipo", "dominio", "empresa", "particular", "destino", "guardia", "estado", "autorizo",
+)
+COLUMNAS_AGENDA = ("nombre", "ubicacion", "telefonos", "contacto", "notas")
+PESTANA_AGENDA = 3
 COLUMNAS_BUSCAR = ("n", "fecha", "ingreso", "salida", "dominio", "empresa", "particular", "destino", "estado")
 
 PERIODOS = ("Hoy", "Ayer", "Últimos 7 días", "Este mes", "Mes anterior", "Elegir fechas…")
@@ -85,6 +96,7 @@ class VentanaPrincipal:
         root.bind("<F5>", lambda _e: self.actualizar_todo())
         root.bind("<Control-n>", lambda _e: self.nuevo_ingreso())
 
+        self.aplicar_perfil()
         self.actualizar_turno()
         self.actualizar_todo()
         self.respaldar(silencioso=True)
@@ -112,6 +124,7 @@ class VentanaPrincipal:
         registros.add_command(label="Anular…", command=self.anular)
         registros.add_command(label="Ver historial", command=self.ver_historial)
         registros.add_separator()
+        registros.add_command(label="Agenda", command=lambda: self.pestanas.select(PESTANA_AGENDA))
         registros.add_command(label="Cambiar turno…", command=self.cambiar_turno)
         registros.add_command(label="Actualizar listas", accelerator="F5", command=self.actualizar_todo)
         barra.add_cascade(label="Registros", menu=registros)
@@ -122,7 +135,7 @@ class VentanaPrincipal:
         barra.add_cascade(label="Reportes", menu=reportes)
 
         ajustes = tk.Menu(barra, tearoff=False)
-        ajustes.add_command(label="Nombre del puesto…", command=self.editar_puesto)
+        ajustes.add_command(label="Puesto y tipo de lugar…", command=self.configurar_puesto)
         ajustes.add_command(label="Envío por correo…", command=self.configurar_correo)
         barra.add_cascade(label="Configuración", menu=ajustes)
 
@@ -163,20 +176,27 @@ class VentanaPrincipal:
         return cabecera
 
     def _campo(self, master: tk.Misc, etiqueta: str, opcional: bool = False) -> ttk.Frame:
+        """Un campo del formulario: título, aclaración y lugar para un ejemplo."""
         marco = ttk.Frame(master, style="Panel.TFrame")
         marco.pack(fill="x", pady=(0, 9))
         titulo = ttk.Frame(marco, style="Panel.TFrame")
         titulo.pack(fill="x")
-        ttk.Label(titulo, text=etiqueta, style="Campo.TLabel").pack(side="left")
+        marco.titulo = ttk.Label(titulo, text=etiqueta, style="Campo.TLabel")
+        marco.titulo.pack(side="left")
         if opcional:
             ttk.Label(titulo, text=" (opcional)", style="Suave.TLabel").pack(side="left")
+        marco.ejemplo = ttk.Label(titulo, style="Suave.TLabel")
+        marco.ejemplo.pack(side="right")
         return marco
 
     def _formulario(self, master: tk.Misc) -> tk.Frame:
         tarjeta = estilo.tarjeta(master)
+        # Los botones van fijos abajo: siempre visibles aunque el formulario tenga que desplazarse.
+        pie = ttk.Frame(tarjeta, style="Panel.TFrame", padding=(18, 10, 18, 14))
+        pie.pack(side="bottom", fill="x")
         desplazable = MarcoDesplazable(tarjeta)
-        desplazable.pack(fill="both", expand=True)
-        f = ttk.Frame(desplazable.interior, style="Panel.TFrame", padding=18)
+        desplazable.pack(side="top", fill="both", expand=True)
+        f = ttk.Frame(desplazable.interior, style="Panel.TFrame", padding=(18, 18, 18, 4))
         f.pack(fill="both", expand=True)
 
         ttk.Label(f, text="Nuevo ingreso", style="Titulo.TLabel").pack(anchor="w", pady=(0, 12))
@@ -207,6 +227,21 @@ class VentanaPrincipal:
         self.entrada_destino = CampoAutocompletar(self.campo_destino, self.base, "destino", width=30)
         self.entrada_destino.pack(fill="x", pady=(4, 0))
 
+        # Ficha de la agenda: aparece sola cuando el destino o la empresa coinciden con un contacto.
+        self.ficha = tk.Frame(f, background=COLORES["gris"], highlightthickness=1,
+                              highlightbackground=COLORES["borde"], padx=10, pady=8)
+        self.ficha_texto = tk.Label(self.ficha, background=COLORES["gris"], foreground=COLORES["texto"],
+                                    font=self.fuentes["normal"], justify="left", anchor="w", wraplength=270)
+        self.ficha_texto.pack(fill="x")
+        self._ficha_pendiente: str | None = None
+        for entrada in (self.entrada_destino, self.entrada_empresa):
+            entrada.bind("<KeyRelease>", lambda _e: self._programar_ficha(), add="+")
+            entrada.bind("<<ComboboxSelected>>", lambda _e: self._programar_ficha(), add="+")
+
+        self.campo_autorizo = self._campo(f, "Autorizó", opcional=True)
+        self.entrada_autorizo = ttk.Entry(self.campo_autorizo, width=32)
+        self.entrada_autorizo.pack(fill="x", pady=(4, 0))
+
         campo_obs = self._campo(f, "Observaciones", opcional=True)
         self.entrada_observaciones = tk.Text(
             campo_obs, height=2, width=30, wrap="word", relief="flat", padx=6, pady=5,
@@ -220,9 +255,9 @@ class VentanaPrincipal:
         ttk.Label(
             f, text="La fecha, la hora y la guardia de turno se\nregistran solas. Enter registra, Esc limpia.",
             style="Suave.TLabel", justify="left",
-        ).pack(anchor="w", pady=(0, 12))
+        ).pack(anchor="w", pady=(0, 4))
 
-        botones = ttk.Frame(f, style="Panel.TFrame")
+        botones = ttk.Frame(pie, style="Panel.TFrame")
         botones.pack(fill="x")
         self.boton_registrar = ttk.Button(
             botones, text="Registrar ingreso", style="Primario.TButton", command=self.registrar_ingreso
@@ -230,10 +265,11 @@ class VentanaPrincipal:
         self.boton_registrar.pack(side="left", fill="x", expand=True)
         ttk.Button(botones, text="Limpiar", command=self.limpiar).pack(side="left", padx=(8, 0))
 
-        self.etiqueta_mensaje = ttk.Label(f, style="Aviso.TLabel", wraplength=280, justify="left")
-        self.etiqueta_mensaje.pack(anchor="w", pady=(10, 0))
+        self.etiqueta_mensaje = ttk.Label(pie, style="Aviso.TLabel", wraplength=300, justify="left")
+        self.etiqueta_mensaje.pack(anchor="w", pady=(8, 0))
 
-        for entrada in (self.entrada_dominio, self.entrada_empresa, self.entrada_particular, self.entrada_destino):
+        for entrada in (self.entrada_dominio, self.entrada_empresa, self.entrada_particular, self.entrada_destino,
+                        self.entrada_autorizo):
             entrada.bind("<Return>", lambda _e: self.registrar_ingreso())
             entrada.bind("<KP_Enter>", lambda _e: self.registrar_ingreso())
             entrada.bind("<Escape>", lambda _e: self.limpiar())
@@ -319,6 +355,28 @@ class VentanaPrincipal:
         self.tabla_buscar = self._tabla(buscar, COLUMNAS_BUSCAR)
         self.pestanas.add(buscar, text="Buscar")
 
+        # Agenda
+        agenda = ttk.Frame(self.pestanas, style="Panel.TFrame", padding=12)
+        barra = ttk.Frame(agenda, style="Panel.TFrame")
+        barra.pack(fill="x", pady=(0, 10))
+        self.var_filtro_agenda = tk.StringVar()
+        self.entrada_filtro_agenda = EntradaConAyuda(barra, "Buscar en la agenda", textvariable=self.var_filtro_agenda,
+                                                     width=28)
+        self.entrada_filtro_agenda.pack(side="left")
+        self.var_filtro_agenda.trace_add("write", lambda *_: self._cargar_agenda())
+        ttk.Button(barra, text="Nuevo contacto", style="Primario.TButton",
+                   command=self.nuevo_contacto).pack(side="left", padx=(12, 0))
+        self.boton_editar_contacto = ttk.Button(barra, text="Editar", command=self.editar_contacto)
+        self.boton_editar_contacto.pack(side="left", padx=(8, 0))
+        self.boton_eliminar_contacto = ttk.Button(barra, text="Eliminar", command=self.eliminar_contacto)
+        self.boton_eliminar_contacto.pack(side="left", padx=(8, 0))
+        ttk.Label(barra, text="No sale en los reportes", style="Suave.TLabel").pack(side="right")
+        self.tabla_agenda = self._tabla(agenda, COLUMNAS_AGENDA)
+        self.tabla_agenda.bind("<Double-1>", lambda _e: self.editar_contacto())
+        self.tabla_agenda.bind("<Return>", lambda _e: self.editar_contacto())
+        self.tabla_agenda.bind("<Delete>", lambda _e: self.eliminar_contacto())
+        self.pestanas.add(agenda, text="Agenda")
+
         # Acciones sobre el registro elegido
         self.boton_salida = ttk.Button(self.barra_acciones, text="Registrar salida", style="Primario.TButton",
                                        command=self.registrar_salida)
@@ -387,10 +445,35 @@ class VentanaPrincipal:
         (self.entrada_particular if self.var_tipo.get() == "peaton" else self.entrada_dominio).focus_set()
 
     def limpiar(self) -> None:
-        for entrada in (self.entrada_dominio, self.entrada_empresa, self.entrada_particular, self.entrada_destino):
+        for entrada in (self.entrada_dominio, self.entrada_empresa, self.entrada_particular, self.entrada_destino,
+                        self.entrada_autorizo):
             entrada.delete(0, "end")
         self.entrada_observaciones.delete("1.0", "end")
+        self._actualizar_ficha()
         self.nuevo_ingreso()
+
+    def _programar_ficha(self) -> None:
+        if self._ficha_pendiente:
+            self.root.after_cancel(self._ficha_pendiente)
+        self._ficha_pendiente = self.root.after(250, self._actualizar_ficha)
+
+    def _actualizar_ficha(self) -> None:
+        self._ficha_pendiente = None
+        contactos = self.base.contactos_para(self.entrada_destino.get(), self.entrada_empresa.get())
+        if not contactos:
+            self.ficha.pack_forget()
+            return
+        lineas = []
+        for c in contactos:
+            cabecera = " · ".join(x for x in (c.nombre, c.contacto) if x)
+            lineas.append(cabecera)
+            if c.telefonos:
+                lineas.append(f"Tel.: {c.telefonos}")
+            if c.notas:
+                lineas.append(c.notas)
+            lineas.append("")
+        self.ficha_texto.configure(text="\n".join(lineas).strip())
+        self.ficha.pack(fill="x", pady=(0, 10), after=self.campo_destino)
 
     def mensaje(self, texto: str) -> None:
         self.etiqueta_mensaje.configure(text=texto)
@@ -429,7 +512,7 @@ class VentanaPrincipal:
             registro = self.base.registrar_ingreso(
                 tipo=tipo, dominio=dominio, empresa=self.entrada_empresa.get(),
                 particular=self.entrada_particular.get(), destino=self.entrada_destino.get(),
-                observaciones=self.entrada_observaciones.get("1.0", "end"),
+                autorizo=self.entrada_autorizo.get(), observaciones=self.entrada_observaciones.get("1.0", "end"),
             )
         except ErrorDeDatos as e:
             messagebox.showwarning("Revisá los datos", str(e), parent=self.root)
@@ -442,6 +525,8 @@ class VentanaPrincipal:
 
     def _seleccionado(self) -> Registro | None:
         tabla = self._tabla_actual()
+        if tabla is None:
+            return None
         seleccion = tabla.selection()
         if not seleccion:
             return None
@@ -450,8 +535,11 @@ class VentanaPrincipal:
         except ErrorDeDatos:
             return None
 
-    def _tabla_actual(self) -> ttk.Treeview:
-        return (self.tabla_adentro, self.tabla_dia, self.tabla_buscar)[self.pestanas.index("current")]
+    def _tabla_actual(self) -> ttk.Treeview | None:
+        indice = self.pestanas.index("current")
+        if indice == PESTANA_AGENDA:
+            return None
+        return (self.tabla_adentro, self.tabla_dia, self.tabla_buscar)[indice]
 
     def _pedir_seleccion(self) -> Registro | None:
         registro = self._seleccionado()
@@ -528,15 +616,58 @@ class VentanaPrincipal:
             return True
         return False
 
-    def editar_puesto(self) -> None:
-        nombre = DialogoTexto(
-            self.root, "Nombre del puesto",
-            "Aparece arriba en la ventana y en los reportes PDF.\nPor ejemplo: «Parque Industrial Norte · Garita principal».",
-            self.base.ajuste("puesto", "") or "",
-        ).mostrar()
-        if nombre is not None:
-            self.base.guardar_ajuste("puesto", nombre)
+    def configurar_puesto(self, inicial: bool = False) -> None:
+        if DialogoPuesto(self.root, self.base, inicial=inicial).mostrar():
+            self.aplicar_perfil()
             self.actualizar_turno()
+
+    def aplicar_perfil(self) -> None:
+        """Ajusta etiquetas y ejemplos al tipo de lugar (barrio, parque, empresa…)."""
+        perfil = perfiles.actual(self.base)
+        self.campo_empresa.titulo.configure(text=perfil.etiqueta_empresa)
+        self.campo_empresa.ejemplo.configure(text=perfil.ej_empresa)
+        self.campo_destino.ejemplo.configure(text=perfil.ej_destino)
+        self.campo_autorizo.ejemplo.configure(text=perfil.ej_autorizo)
+
+    # Agenda
+    def _contacto_seleccionado(self) -> Contacto | None:
+        seleccion = self.tabla_agenda.selection()
+        if not seleccion:
+            return None
+        try:
+            return self.base.contacto(int(seleccion[0]))
+        except ErrorDeDatos:
+            return None
+
+    def nuevo_contacto(self) -> None:
+        contacto = DialogoContacto(self.root, self.base, perfiles.actual(self.base)).mostrar()
+        if contacto:
+            self._cargar_agenda(seleccionar=contacto.id)
+            self._actualizar_ficha()
+
+    def editar_contacto(self) -> None:
+        contacto = self._contacto_seleccionado()
+        if contacto is None:
+            messagebox.showinfo("Agenda", "Primero seleccioná un contacto de la lista.", parent=self.root)
+            return
+        if DialogoContacto(self.root, self.base, perfiles.actual(self.base), contacto).mostrar():
+            self._cargar_agenda(seleccionar=contacto.id)
+            self._actualizar_ficha()
+
+    def eliminar_contacto(self) -> None:
+        contacto = self._contacto_seleccionado()
+        if contacto is None:
+            messagebox.showinfo("Agenda", "Primero seleccioná un contacto de la lista.", parent=self.root)
+            return
+        if messagebox.askyesno(
+            "Eliminar contacto",
+            f"¿Eliminar «{contacto.nombre}» de la agenda?\n\n"
+            "Se borra definitivamente. Los ingresos ya registrados no cambian.",
+            parent=self.root,
+        ):
+            self.base.eliminar_contacto(contacto.id)
+            self._cargar_agenda()
+            self._actualizar_ficha()
 
     # Reportes y correo: se completan en la etapa 3.
     def exportar_pdf(self) -> None:
@@ -607,7 +738,7 @@ class VentanaPrincipal:
     # ------------------------------------------------------------------
 
     def actualizar_turno(self) -> None:
-        puesto = self.base.ajuste("puesto", "") or "Configurá el nombre en Configuración → Nombre del puesto"
+        puesto = self.base.ajuste("puesto", "") or "Configurá el nombre en Configuración → Puesto y tipo de lugar"
         self.etiqueta_puesto.configure(text=puesto)
         turno = self.base.turno_actual()
         if turno:
@@ -620,6 +751,7 @@ class VentanaPrincipal:
     def actualizar_todo(self, seleccionar: int | None = None) -> None:
         self._cargar_adentro(seleccionar)
         self._cargar_dia(seleccionar)
+        self._cargar_agenda()
         if self.ultima_busqueda:
             self._ejecutar_busqueda(*self.ultima_busqueda)
         self._actualizar_acciones()
@@ -638,6 +770,7 @@ class VentanaPrincipal:
             "guardia": formato.guardia_corta(registro.guardia_ingreso) or "—",
             "tiempo": formato.duracion(registro.momento_ingreso, ahora),
             "estado": formato.estado(registro),
+            "autorizo": registro.autorizo or "—",
         }
         return tuple(valores[c] for c in columnas)
 
@@ -685,6 +818,22 @@ class VentanaPrincipal:
         self.etiqueta_total_dia.configure(text=resumen)
         self.pestanas.tab(1, text=f"Registro del día ({len(validos)})" if es_hoy else "Registro del día")
 
+    def _cargar_agenda(self, seleccionar: int | None = None) -> None:
+        if not hasattr(self, "tabla_agenda"):
+            return
+        tabla = self.tabla_agenda
+        anterior = tabla.selection()
+        elegido = str(seleccionar) if seleccionar is not None else (anterior[0] if anterior else None)
+        tabla.delete(*tabla.get_children())
+        for i, c in enumerate(self.base.agenda(self.entrada_filtro_agenda.valor())):
+            tabla.insert("", "end", iid=str(c.id), tags=["par"] if i % 2 else [],
+                         values=(c.nombre, c.ubicacion, c.telefonos, c.contacto, " ".join(c.notas.split())))
+        if elegido and tabla.exists(elegido):
+            tabla.selection_set(elegido)
+            tabla.see(elegido)
+        cantidad = len(self.base.agenda())
+        self.pestanas.tab(PESTANA_AGENDA, text=f"Agenda ({cantidad})" if cantidad else "Agenda")
+
     def mover_dia(self, dias: int) -> None:
         self.dia_mostrado += timedelta(days=dias)
         self._cargar_dia()
@@ -718,6 +867,15 @@ class VentanaPrincipal:
     def _actualizar_acciones(self) -> None:
         if not hasattr(self, "boton_salida"):
             return
+        en_agenda = self.pestanas.index("current") == PESTANA_AGENDA
+        if en_agenda:
+            self.barra_acciones.pack_forget()
+            hay_contacto = bool(self.tabla_agenda.selection())
+            for boton in (self.boton_editar_contacto, self.boton_eliminar_contacto):
+                boton.state(["!disabled"] if hay_contacto else ["disabled"])
+            return
+        if not self.barra_acciones.winfo_manager():
+            self.barra_acciones.pack(side="bottom", fill="x", before=self.pestanas)
         registro = self._seleccionado()
         hay = registro is not None
         self.boton_salida.state(["!disabled"] if hay and registro.adentro else ["disabled"])
@@ -767,7 +925,9 @@ class VentanaPrincipal:
     # ------------------------------------------------------------------
 
     def _pasos_recorrido(self) -> list[Paso]:
+        perfil = perfiles.actual(self.base)
         ir_a = lambda indice: (lambda: self.pestanas.select(indice))  # noqa: E731
+        destino = perfil.ej_destino.removeprefix("ej.: ")
         return [
             Paso(lambda: self.caja_turno, "Guardia de turno",
                  "Al empezar cada turno, la guardia que entra pone su nombre con «Cambiar turno». "
@@ -777,17 +937,21 @@ class VentanaPrincipal:
                  "A pie no hace falta el dominio."),
             Paso(lambda: self.campo_dominio, "Dominio",
                  "La patente del vehículo. Se puede escribir con o sin espacios: «ab123cd» queda AB 123 CD."),
-            Paso(lambda: self.campo_empresa, "Empresa",
-                 "La empresa desde donde viene la persona. Si es una visita particular, se deja vacío. "
-                 "Con el uso, la app sugiere las empresas que ya se cargaron."),
+            Paso(lambda: self.campo_empresa, perfil.etiqueta_empresa,
+                 "De dónde viene o a qué viene la persona: una empresa, un delivery, una obra, una visita. "
+                 "Es opcional, y con el uso la app sugiere lo que ya se cargó."),
             Paso(lambda: self.campo_particular, "Particular",
                  "El nombre y apellido completo de la persona que entra o sale del predio."),
-            Paso(lambda: self.campo_destino, "Destino y observaciones",
-                 "A qué sector va dentro del predio: Planta 2, Oficina, el lote de un barrio… "
-                 "En Observaciones se puede anotar algo útil, como «trae carga» o «remís»."),
+            Paso(lambda: self.campo_destino, "Destino",
+                 f"A dónde va dentro del predio ({destino}). Si ese lugar está en la Agenda, "
+                 "debajo aparece su ficha con el teléfono, lista para llamar."),
+            Paso(lambda: self.campo_autorizo, "Autorizó",
+                 "Quién dio el permiso para entrar, si hizo falta pedirlo: por ejemplo, el vecino que "
+                 "atendió el llamado o el responsable del sector. Queda en el historial y en los reportes."),
             Paso(lambda: self.boton_registrar, "Registrar ingreso",
                  "Guarda el ingreso. La fecha y la hora las pone la app, nadie las escribe a mano. "
-                 "Atajos: Enter para registrar y Esc para limpiar el formulario."),
+                 "En Observaciones se puede anotar algo útil, como «trae carga» o «remís». "
+                 "Atajos: Enter para registrar y Esc para limpiar."),
             Paso(lambda: self.tabla_adentro, "Adentro ahora",
                  "Quienes entraron y todavía no salieron, con cuánto tiempo llevan adentro. "
                  "Cuando alguien se va, seleccionalo y tocá «Registrar salida» (o hacé doble clic).",
@@ -798,6 +962,13 @@ class VentanaPrincipal:
             Paso(lambda: self.pestanas, "Registro del día y Buscar",
                  "En «Registro del día» está todo lo que pasó en una fecha, y en «Buscar» se encuentra "
                  "cualquier dominio, empresa o persona.", antes=ir_a(1)),
+            Paso(lambda: self.pestanas, "Agenda",
+                 f"Los teléfonos que la guardia necesita a mano: {perfil.agenda}. "
+                 "Los contactos se pueden editar y eliminar en cualquier momento.\n\n"
+                 "Son datos personales: cargá solo lo necesario para el trabajo de la guardia y borrá lo que "
+                 "ya no sirva. En Argentina, su tratamiento está alcanzado por la Ley 25.326 de Protección de "
+                 "Datos Personales. La agenda queda solo en este equipo y nunca sale en los reportes ni en los correos.",
+                 antes=ir_a(PESTANA_AGENDA)),
             Paso(lambda: self.barra_reportes, "Reportes",
                  "Elegí el período y exportalo a PDF para imprimir, o envialo por correo al encargado. "
                  "Este recorrido se puede repetir con F1 o desde Ayuda.", antes=ir_a(0)),

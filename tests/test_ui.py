@@ -30,6 +30,7 @@ def ventana(tmp_path, monkeypatch):
     base = BaseDeDatos(tmp_path / "ingresos.db")
     base.iniciar_turno("Lucía Ramírez")
     base.guardar_ajuste("recorrido_visto", "1")
+    base.guardar_ajuste("tipo_predio", "barrio")
     v = VentanaPrincipal(root, base, tmp_path)
     v.avisos = avisos
     root.update()
@@ -87,3 +88,39 @@ def test_buscar_y_recorrido(ventana):
         ventana.root.update()
     assert not ventana._recorrido.activo
     assert ventana.base.ajuste("recorrido_visto") == "1"
+
+
+def test_perfil_barrio_y_autorizo(ventana):
+    assert ventana.campo_empresa.titulo.cget("text") == "Empresa o motivo"
+    ventana.entrada_autorizo.insert(0, "Pérez, Lote 34")
+    cargar(ventana, destino="Lote 34")
+    assert ventana.base.obtener(1).autorizo == "Pérez, Lote 34"
+    ventana.pestanas.select(1)
+    assert ventana.tabla_dia.set("1", "autorizo") == "Pérez, Lote 34"
+
+
+def test_agenda_y_ficha_en_el_formulario(ventana, monkeypatch):
+    from tkinter import messagebox
+
+    c = ventana.base.guardar_contacto(nombre="Lote 34", contacto="Familia Pérez", telefonos="11 5555-1234")
+    ventana.actualizar_todo()
+    assert ventana.tabla_agenda.get_children() == (str(c.id),)
+    assert ventana.pestanas.tab(3, "text") == "Agenda (1)"
+
+    ventana.entrada_destino.insert(0, "Lote 34")
+    ventana._actualizar_ficha()
+    ventana.root.update()
+    assert ventana.ficha.winfo_manager() == "pack"
+    assert "11 5555-1234" in ventana.ficha_texto.cget("text")
+
+    ventana.pestanas.select(3)
+    ventana.root.update()
+    assert not ventana.barra_acciones.winfo_manager()  # las acciones de registros no aplican a la agenda
+    ventana.tabla_agenda.selection_set(str(c.id))
+    monkeypatch.setattr(messagebox, "askyesno", lambda *a, **k: True)
+    ventana.eliminar_contacto()
+    assert ventana.tabla_agenda.get_children() == ()
+    assert ventana.ficha.winfo_manager() == ""  # la ficha desaparece
+    ventana.pestanas.select(0)
+    ventana.root.update()
+    assert ventana.barra_acciones.winfo_manager() == "pack"
