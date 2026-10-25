@@ -1,0 +1,5 @@
+# Fin de línea normalizado en el repositorio (Windows lo convierte al hacer checkout)
+* text=auto
+*.ico binary
+*.png binary
+*.pdf binary

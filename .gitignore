@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Compilación con PyInstaller
+build/
+dist/
+*.spec
+
+# Datos locales (nunca se suben al repositorio)
+base
+*.db
+tabla_ingresos.pdf
+respaldos/
